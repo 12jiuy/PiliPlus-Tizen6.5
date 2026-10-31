@@ -52,8 +52,8 @@ import 'package:get/get.dart';
 /// `PlayerFocus`): OK toggles play/pause. Left/Right enter an Apple-TV-style
 /// scrubber — each tap nudges a VISUAL target ±10s (holding accelerates the
 /// step), a scrub bar with a Bilibili-videoshot thumbnail preview + target
-/// time/delta tracks it, and exactly ONE native seek commits on OK or after a
-/// ~1s idle; Back cancels with zero seeks. (Per-keypress native seeks used to
+/// time/delta tracks it, and exactly ONE native seek commits on OK (or after a
+/// ~1s idle while playing); Back cancels with zero seeks. (Per-keypress native seeks used to
 /// race AVPlay to the end — the scrubber fires at most one seek per gesture.)
 /// Up (or the remote's menu key) opens the options panel (弹幕/清晰度/音质/
 /// 播放速度/画面比例/播放顺序 via [TvPlayerOptions]), Down peeks the controls,
@@ -655,8 +655,13 @@ class _TvVideoPageState extends State<TvVideoPage> {
     return 60;
   }
 
+  /// Only a scrub started while playing commits on idle: playback must resume
+  /// at the target. While paused nothing is waiting, so the target is only
+  /// committed by OK — an idle commit would seek to every point the user
+  /// pauses at mid-scrub.
   void _armIdleCommit() {
     _scrubCommitTimer?.cancel();
+    if (!_wasPlayingAtScrubStart) return;
     _scrubCommitTimer = Timer(_scrubIdleCommit, _commitScrub);
   }
 
