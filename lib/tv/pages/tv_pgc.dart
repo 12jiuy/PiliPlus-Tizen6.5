@@ -60,6 +60,13 @@ class _TvPgcState extends State<TvPgc> {
   /// last-watched episode, else the first one).
   final FocusNode _stripEntryNode = FocusNode(debugLabel: 'TvPgcStrip-entry');
 
+  /// Wraps the strip, so [FocusNode.hasFocus] tells whether a tile is focused.
+  final FocusNode _stripScopeNode = FocusNode(
+    debugLabel: 'TvPgcStrip',
+    canRequestFocus: false,
+    skipTraversal: true,
+  );
+
   _Expanded? _expanded;
   LoadingState<PgcInfoModel>? _info;
 
@@ -69,7 +76,12 @@ class _TvPgcState extends State<TvPgc> {
 
   @override
   void dispose() {
-    for (final node in [..._railNodes, ..._gridNodes, _stripEntryNode]) {
+    for (final node in [
+      ..._railNodes,
+      ..._gridNodes,
+      _stripEntryNode,
+      _stripScopeNode,
+    ]) {
       node.dispose();
     }
     Get.delete<PgcController>(tag: _controllerTag);
@@ -90,9 +102,7 @@ class _TvPgcState extends State<TvPgc> {
   Future<void> _toggleStrip(bool inRail, int index, int? seasonId) async {
     if (seasonId == null) return;
     final current = _expanded;
-    if (current != null &&
-        current.inRail == inRail &&
-        current.index == index) {
+    if (current != null && current.inRail == inRail && current.index == index) {
       _closeStrip();
       return;
     }
@@ -109,8 +119,11 @@ class _TvPgcState extends State<TvPgc> {
     final request = ++_request;
     final res = await SearchHttp.pgcInfo(seasonId: expanded.seasonId);
     if (!mounted || request != _request) return;
+    // A refresh can move the entry node onto another tile and drop the
+    // focused one from the tree; keep focus in the strip, on the entry.
+    final refocus = focusEntry || _stripScopeNode.hasFocus;
     setState(() => _info = res);
-    if (focusEntry && res is Success) {
+    if (refocus && res is Success) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _stripEntryNode.context != null) {
           _stripEntryNode.requestFocus();
@@ -135,8 +148,7 @@ class _TvPgcState extends State<TvPgc> {
     return expanded.index < nodes.length ? nodes[expanded.index] : null;
   }
 
-  bool get _stripReady =>
-      _info is Success && _stripEntryNode.context != null;
+  bool get _stripReady => _info is Success && _stripEntryNode.context != null;
 
   Future<void> _play(PgcInfoModel info, int episodeIndex) async {
     await tvPlayPgcEpisode(info, info.episodes![episodeIndex]);
@@ -443,13 +455,16 @@ class _TvPgcState extends State<TvPgc> {
   Widget _buildStrip(_Expanded expanded) {
     return Padding(
       padding: const EdgeInsets.only(bottom: TvTheme.gridVSpacing),
-      child: _TvPgcEpisodeStrip(
-        key: ValueKey(expanded),
-        info: _info,
-        entryNode: _stripEntryNode,
-        onExitKey: _onStripExit,
-        onPlay: _play,
-        onMore: () => _openDetail(expanded.seasonId),
+      child: Focus(
+        focusNode: _stripScopeNode,
+        child: _TvPgcEpisodeStrip(
+          key: ValueKey(expanded),
+          info: _info,
+          entryNode: _stripEntryNode,
+          onExitKey: _onStripExit,
+          onPlay: _play,
+          onMore: () => _openDetail(expanded.seasonId),
+        ),
       ),
     );
   }
@@ -485,11 +500,16 @@ class _TvPgcEpisodeStripState extends State<_TvPgcEpisodeStrip> {
 
   final List<FocusNode> _ownNodes = [];
 
+  /// Created on the first row layout, scrolled so the entry tile is on
+  /// screen: off-screen tiles are never built, so could not take focus.
+  ScrollController? _scroll;
+
   @override
   void dispose() {
     for (final node in _ownNodes) {
       node.dispose();
     }
+    _scroll?.dispose();
     super.dispose();
   }
 
@@ -564,33 +584,42 @@ class _TvPgcEpisodeStripState extends State<_TvPgcEpisodeStrip> {
         ),
         SizedBox(
           height: _height,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(
-              horizontal: TvTheme.screenPadding,
-              vertical: TvTheme.heroRowOverscan,
-            ),
-            itemCount: count,
-            separatorBuilder: (_, _) =>
-                const SizedBox(width: TvPgcEpisodeTile.gap),
-            itemBuilder: (context, i) {
-              if (i == count - 1) {
+          child: LayoutBuilder(
+            builder: (context, constraints) => ListView.separated(
+              controller: _scroll ??= ScrollController(
+                initialScrollOffset: tvEpisodeRowOffset(
+                  index: entry,
+                  count: count,
+                  viewport: constraints.maxWidth,
+                ),
+              ),
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(
+                horizontal: TvTheme.screenPadding,
+                vertical: TvTheme.heroRowOverscan,
+              ),
+              itemCount: count,
+              separatorBuilder: (_, _) =>
+                  const SizedBox(width: TvPgcEpisodeTile.gap),
+              itemBuilder: (context, i) {
+                if (i == count - 1) {
+                  return TvPgcEpisodeTile(
+                    label: '更多 ›',
+                    focusNode: nodes[i],
+                    onKeyEvent: (node, event) => _onKey(nodes, i, event),
+                    onSelect: widget.onMore,
+                  );
+                }
+                final index = start + i;
                 return TvPgcEpisodeTile(
-                  label: '更多 ›',
+                  episode: episodes[index],
+                  highlighted: index == last,
                   focusNode: nodes[i],
                   onKeyEvent: (node, event) => _onKey(nodes, i, event),
-                  onSelect: widget.onMore,
+                  onSelect: () => widget.onPlay(info, index),
                 );
-              }
-              final index = start + i;
-              return TvPgcEpisodeTile(
-                episode: episodes[index],
-                highlighted: index == last,
-                focusNode: nodes[i],
-                onKeyEvent: (node, event) => _onKey(nodes, i, event),
-                onSelect: () => widget.onPlay(info, index),
-              );
-            },
+              },
+            ),
           ),
         ),
       ],

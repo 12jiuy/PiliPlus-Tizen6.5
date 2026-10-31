@@ -37,6 +37,21 @@ Future<void> tvPlayPgcEpisode(PgcInfoModel info, EpisodeItem episode) async {
   );
 }
 
+/// Initial scroll offset for a horizontal row of [count] [TvPgcEpisodeTile]s
+/// (padded by [TvTheme.screenPadding]) in a [viewport]-wide list: tile [index]
+/// sits about two tiles in from the left, clamped to the row's real extent.
+/// Puts that tile on screen, so it is built (and focusable) on the first frame.
+double tvEpisodeRowOffset({
+  required int index,
+  required int count,
+  required double viewport,
+}) {
+  const step = TvPgcEpisodeTile.width + TvPgcEpisodeTile.gap;
+  const content = TvTheme.screenPadding * 2 - TvPgcEpisodeTile.gap;
+  final max = content + count * step - viewport;
+  return ((index - 2) * step).clamp(0.0, max < 0 ? 0.0 : max);
+}
+
 /// A focusable episode tile (`第3话` + badge over the episode's long title);
 /// a [highlighted] one (last watched / now playing) gets a
 /// [TvTheme.brandPink] outline and label. With [label] and no [episode] it is

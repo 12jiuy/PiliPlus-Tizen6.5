@@ -32,17 +32,14 @@ class TvEpisodeBar extends StatefulWidget {
 
 class _TvEpisodeBarState extends State<TvEpisodeBar> {
   static const double _ds = TvTheme.designScale;
-  static const double _step = TvPgcEpisodeTile.width + TvPgcEpisodeTile.gap;
 
   late final int _current = widget.episodes
       .indexWhere((e) => e.cid == widget.currentCid)
       .clamp(0, widget.episodes.length - 1);
 
-  // Start with the current episode about two tiles in from the left, so it is
+  // Created on the first layout, with the current episode on screen so it is
   // built (and focusable) on the first frame even in a long series.
-  late final ScrollController _scroll = ScrollController(
-    initialScrollOffset: ((_current - 2) * _step).clamp(0, double.infinity),
-  );
+  ScrollController? _scroll;
 
   late final List<FocusNode> _nodes = List.generate(
     widget.episodes.length,
@@ -64,7 +61,7 @@ class _TvEpisodeBarState extends State<TvEpisodeBar> {
     for (final node in _nodes) {
       node.dispose();
     }
-    _scroll.dispose();
+    _scroll?.dispose();
     super.dispose();
   }
 
@@ -118,27 +115,35 @@ class _TvEpisodeBarState extends State<TvEpisodeBar> {
               ),
               SizedBox(
                 height: TvPgcEpisodeTile.height + TvTheme.heroRowOverscan * 2,
-                child: ListView.separated(
-                  controller: _scroll,
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: TvTheme.screenPadding,
-                    vertical: TvTheme.heroRowOverscan,
+                child: LayoutBuilder(
+                  builder: (context, constraints) => ListView.separated(
+                    controller: _scroll ??= ScrollController(
+                      initialScrollOffset: tvEpisodeRowOffset(
+                        index: _current,
+                        count: episodes.length,
+                        viewport: constraints.maxWidth,
+                      ),
+                    ),
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: TvTheme.screenPadding,
+                      vertical: TvTheme.heroRowOverscan,
+                    ),
+                    itemCount: episodes.length,
+                    separatorBuilder: (_, _) =>
+                        const SizedBox(width: TvPgcEpisodeTile.gap),
+                    itemBuilder: (context, i) {
+                      final ep = episodes[i];
+                      return TvPgcEpisodeTile(
+                        episode: ep is EpisodeItem ? ep : null,
+                        label: ep is EpisodeItem ? null : _partLabel(ep, i),
+                        highlighted: i == _current,
+                        focusNode: _nodes[i],
+                        onKeyEvent: (node, event) => _onKey(i, event),
+                        onSelect: () => widget.onSelect(ep),
+                      );
+                    },
                   ),
-                  itemCount: episodes.length,
-                  separatorBuilder: (_, _) =>
-                      const SizedBox(width: TvPgcEpisodeTile.gap),
-                  itemBuilder: (context, i) {
-                    final ep = episodes[i];
-                    return TvPgcEpisodeTile(
-                      episode: ep is EpisodeItem ? ep : null,
-                      label: ep is EpisodeItem ? null : _partLabel(ep, i),
-                      highlighted: i == _current,
-                      focusNode: _nodes[i],
-                      onKeyEvent: (node, event) => _onKey(i, event),
-                      onSelect: () => widget.onSelect(ep),
-                    );
-                  },
                 ),
               ),
             ],
