@@ -6,7 +6,7 @@
 
 ![platform](https://img.shields.io/badge/Tizen-6.5%2B-blue)
 ![flutter](https://img.shields.io/badge/flutter--tizen-3.44-02569B)
-![release](https://img.shields.io/github/v/release/12jiuy/PiliPlus-Tizen)
+![release](https://img.shields.io/github/v/release/12jiuy/PiliPlus-Tizen6.5)
 ![license](https://img.shields.io/badge/license-GPL--3.0-green)
 
 <p align="center"><a href="README.md">English</a> · <b>简体中文</b></p>
@@ -17,7 +17,7 @@ PiliPlus-Tizen 通过 [`flutter-tizen`](https://github.com/flutter-tizen/flutter
 
 ## 安装
 
-1. 从 [Releases](https://github.com/12jiuy/PiliPlus-Tizen/releases) 下载 `.tpk`。
+1. 从 [Releases](https://github.com/12jiuy/PiliPlus-Tizen6.5/releases) 下载 `.tpk`。
 2. 在电视上开启开发者模式：打开「应用」，用遥控器输入 `12345`，打开 Developer mode，Host PC IP 填你电脑的 IP。
 3. 用 Apps2Samsung、Tizen Studio 或 `sdb install <文件>.tpk` 安装。
 

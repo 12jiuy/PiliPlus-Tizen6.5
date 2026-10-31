@@ -6,7 +6,7 @@
 
 ![platform](https://img.shields.io/badge/Tizen-6.5%2B-blue)
 ![flutter](https://img.shields.io/badge/flutter--tizen-3.44-02569B)
-![release](https://img.shields.io/github/v/release/12jiuy/PiliPlus-Tizen)
+![release](https://img.shields.io/github/v/release/12jiuy/PiliPlus-Tizen6.5)
 ![license](https://img.shields.io/badge/license-GPL--3.0-green)
 
 <p align="center"><b>English</b> · <a href="README.zh-CN.md">简体中文</a></p>
@@ -17,7 +17,7 @@ Tested on a **Samsung QN65S95B (Tizen 6.5)**. The package targets API 6.5, so it
 
 ## Install
 
-1. Download the `.tpk` from [Releases](https://github.com/12jiuy/PiliPlus-Tizen/releases).
+1. Download the `.tpk` from [Releases](https://github.com/12jiuy/PiliPlus-Tizen6.5/releases).
 2. Enable developer mode on the TV (Apps → enter `12345` → Developer mode On, Host PC IP = your computer).
 3. Install it with Apps2Samsung, Tizen Studio, or `sdb install <file>.tpk`.
 
