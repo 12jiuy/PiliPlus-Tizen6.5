@@ -1216,6 +1216,10 @@ class PlPlayerController with BlockConfigMixin {
   }
 
   /// 暂停播放
+  /// Set by a page that can show 接下来 while this video's ending plays on;
+  /// returns false when there is nothing to advance to.
+  bool Function()? onEnding;
+
   Future<void> pause({bool notify = true, bool isInterrupt = false}) async {
     await _videoPlayerController?.pause();
     playerStatus.value = PlayerStatus.paused;

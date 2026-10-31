@@ -94,6 +94,9 @@ class _TvVideoPageState extends State<TvVideoPage> {
   final Rxn<TvUpNextInfo> _upNext = Rxn<TvUpNextInfo>();
   BaseEpisodeItem? _pendingNext;
 
+  /// The 接下来 card was raised by [_onEnding] while the video still plays.
+  bool _upNextEarly = false;
+
   /// The 已播放完毕 end card (重新播放 + 相关视频), for 播完暂停 / no-next.
   final RxBool _endCardVisible = false.obs;
   RelatedController? _relatedCtr;
@@ -211,7 +214,8 @@ class _TvVideoPageState extends State<TvVideoPage> {
     if (videoDetailController.autoPlay) {
       plPlayerController = playerCtr
         ..addStatusLister(_statusListener)
-        ..addPositionListener(_positionListener);
+        ..addPositionListener(_positionListener)
+        ..onEnding = _onEnding;
     }
     _watchBufferingForLag();
   }
@@ -267,6 +271,9 @@ class _TvVideoPageState extends State<TvVideoPage> {
     plPlayerController
       ?..removeStatusLister(_statusListener)
       ..removePositionListener(_positionListener);
+    if (plPlayerController?.onEnding == _onEnding) {
+      plPlayerController!.onEnding = null;
+    }
     // Clear the play callback registered in initState so it can't fire on a
     // disposed controller after this page is popped.
     PlPlayerController.setPlayCallBack(null);
@@ -322,8 +329,9 @@ class _TvVideoPageState extends State<TvVideoPage> {
       _handleCompletion();
     }
     if (status.isPlaying) {
-      // A new video started — clear any lingering end-of-video overlays.
-      _dismissUpNext();
+      // A new video started — clear any lingering end-of-video overlays
+      // (but not a 接下来 offered over the ending that is still playing).
+      if (!_upNextEarly) _dismissUpNext();
       _dismissEndCard();
       if (_controlsVisible.value) {
         _scheduleHide();
@@ -341,34 +349,55 @@ class _TvVideoPageState extends State<TvVideoPage> {
   void _handleCompletion() {
     final player = plPlayerController;
     if (player == null) return;
-    final intro = introController;
-    // 番剧 always continue to the next episode, unless set to 单集循环.
-    if (intro is PgcIntroController &&
-        player.playRepeat != PlayRepeat.singleCycle) {
-      final next = _nextPgcEpisode(intro, player.playRepeat);
-      if (next != null) {
-        _showUpNext(next);
-      } else {
-        _showEndCard();
-      }
+    if (_upNext.value != null) {
+      // Already offered while the ending played; let its countdown run on.
+      _upNextEarly = false;
       return;
     }
-    switch (player.playRepeat) {
-      case PlayRepeat.singleCycle:
-        player.play(repeat: true);
-      case PlayRepeat.pause:
-        _showEndCard();
-      case PlayRepeat.listOrder:
-      case PlayRepeat.listCycle:
-      case PlayRepeat.autoPlayRelated:
-        final next = intro is UgcIntroController ? intro.peekNext() : null;
-        if (next != null) {
-          _showUpNext(next);
-        } else {
-          // Nothing to auto-advance to → the end card (重新播放 + 相关视频).
-          _showEndCard();
-        }
+    if (player.playRepeat == PlayRepeat.singleCycle) {
+      player.play(repeat: true);
+      return;
     }
+    final next = _autoNext(player);
+    if (next != null) {
+      _showUpNext(next);
+    } else {
+      // Nothing to auto-advance to → the end card (重新播放 + 相关视频).
+      _showEndCard();
+    }
+  }
+
+  /// What 连播 advances to after this video, or null to stop. 番剧 always
+  /// continue to the next episode unless set to 单集循环; others follow the
+  /// autoplay modes of 播放顺序.
+  BaseEpisodeItem? _autoNext(PlPlayerController player) {
+    final intro = introController;
+    final mode = player.playRepeat;
+    if (intro is PgcIntroController) {
+      return mode == PlayRepeat.singleCycle
+          ? null
+          : _nextPgcEpisode(intro, mode);
+    }
+    return switch (mode) {
+      PlayRepeat.listOrder ||
+      PlayRepeat.listCycle ||
+      PlayRepeat.autoPlayRelated =>
+        intro is UgcIntroController ? intro.peekNext() : null,
+      _ => null,
+    };
+  }
+
+  /// [PlPlayerController.onEnding]: an 片尾 skip that would land at the very
+  /// end shows 接下来 over the still-playing ending instead.
+  bool _onEnding() {
+    final player = plPlayerController;
+    if (player == null) return false;
+    if (_upNext.value != null) return true;
+    final next = _autoNext(player);
+    if (next == null) return false;
+    _upNextEarly = true;
+    _showUpNext(next);
+    return true;
   }
 
   /// The episode after the current one; wraps to the first only for 列表循环.
@@ -419,6 +448,7 @@ class _TvVideoPageState extends State<TvVideoPage> {
 
   void _dismissUpNext() {
     _pendingNext = null;
+    _upNextEarly = false;
     if (_upNext.value != null) {
       _upNext.value = null;
       // The card's focused node is about to be disposed; return focus to the
@@ -552,7 +582,8 @@ class _TvVideoPageState extends State<TvVideoPage> {
     videoDetailController.autoPlay = true;
     ctr
       ..addStatusLister(_statusListener)
-      ..addPositionListener(_positionListener);
+      ..addPositionListener(_positionListener)
+      ..onEnding = _onEnding;
     if (ctr.preInitPlayer) {
       return ctr.play();
     }
@@ -1052,7 +1083,10 @@ class _TvVideoPageState extends State<TvVideoPage> {
                 if (info == null) return const SizedBox.shrink();
                 return Positioned.fill(
                   child: ColoredBox(
-                    color: TvTheme.overlayScrim,
+                    // No dimming over an ending that is still playing.
+                    color: _upNextEarly
+                        ? Colors.transparent
+                        : TvTheme.overlayScrim,
                     child: Stack(
                       children: [
                         Positioned(

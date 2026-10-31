@@ -36,6 +36,9 @@ mixin BlockConfigMixin {
 }
 
 mixin BlockMixin on GetxController {
+  /// A skip ending this close to the video's end is not taken (see [onSkip]).
+  static const int _endingWithinMs = 10000;
+
   int? _lastBlockPos;
   BlockConfigMixin get blockConfig;
   StreamSubscription<Duration>? _blockListener;
@@ -56,6 +59,10 @@ mixin BlockMixin on GetxController {
   bool get isFullScreen => false;
 
   bool get isUgc;
+
+  /// Offers the next video while this one's ending keeps playing; false when
+  /// the host cannot, in which case a skip to the end seeks there instead.
+  bool previewNextAtEnding() => false;
   late final isBlock = isUgc || !blockConfig.enablePgcSkip;
 
   Future<void> querySponsorBlock({
@@ -257,6 +264,17 @@ mixin BlockMixin on GetxController {
     bool isSeek = true,
   }) async {
     try {
+      // A skip that would land in the last few seconds (e.g. an 片尾 running
+      // to the end) lets the ending play on with the next video offered
+      // instead: a far seek has to re-buffer, can fail on a slow link, and
+      // then the end is never reached for 连播.
+      final int endMs = player?.duration.inMilliseconds ?? 0;
+      if (isSkip &&
+          endMs > 0 &&
+          endMs - item.segment.$2 <= _endingWithinMs &&
+          previewNextAtEnding()) {
+        return;
+      }
       await seekTo(
         Duration(milliseconds: item.segment.$2),
         isSeek: isSeek,

@@ -557,6 +557,9 @@ class VideoDetailController extends GetxController
       plPlayerController.seekTo(duration, isSeek: isSeek);
 
   @override
+  bool previewNextAtEnding() => plPlayerController.onEnding?.call() ?? false;
+
+  @override
   Widget buildItem(Object item, Animation<double> animation) {
     final theme = ThemeUtils.theme;
     return Align(
