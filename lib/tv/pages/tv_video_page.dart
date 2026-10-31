@@ -341,6 +341,18 @@ class _TvVideoPageState extends State<TvVideoPage> {
   void _handleCompletion() {
     final player = plPlayerController;
     if (player == null) return;
+    final intro = introController;
+    // 番剧 always continue to the next episode, unless set to 单集循环.
+    if (intro is PgcIntroController &&
+        player.playRepeat != PlayRepeat.singleCycle) {
+      final next = _nextPgcEpisode(intro, player.playRepeat);
+      if (next != null) {
+        _showUpNext(next);
+      } else {
+        _showEndCard();
+      }
+      return;
+    }
     switch (player.playRepeat) {
       case PlayRepeat.singleCycle:
         player.play(repeat: true);
@@ -349,16 +361,29 @@ class _TvVideoPageState extends State<TvVideoPage> {
       case PlayRepeat.listOrder:
       case PlayRepeat.listCycle:
       case PlayRepeat.autoPlayRelated:
-        final intro = introController;
         final next = intro is UgcIntroController ? intro.peekNext() : null;
         if (next != null) {
-          _pendingNext = next;
-          _upNext.value = TvUpNextInfo.from(next);
+          _showUpNext(next);
         } else {
           // Nothing to auto-advance to → the end card (重新播放 + 相关视频).
           _showEndCard();
         }
     }
+  }
+
+  /// The episode after the current one; wraps to the first only for 列表循环.
+  BaseEpisodeItem? _nextPgcEpisode(PgcIntroController intro, PlayRepeat mode) {
+    final episodes = intro.pgcItem.episodes;
+    if (episodes == null || episodes.isEmpty) return null;
+    final i = episodes.indexWhere((e) => e.cid == intro.cid.value);
+    if (i < 0) return null;
+    if (i + 1 < episodes.length) return episodes[i + 1];
+    return mode == PlayRepeat.listCycle ? episodes.first : null;
+  }
+
+  void _showUpNext(BaseEpisodeItem next) {
+    _pendingNext = next;
+    _upNext.value = TvUpNextInfo.from(next);
   }
 
   /// Shows the end card and ensures related videos are fetched for it.
@@ -389,9 +414,7 @@ class _TvVideoPageState extends State<TvVideoPage> {
   void _playPendingNext() {
     final item = _pendingNext;
     _dismissUpNext();
-    if (item != null && introController is UgcIntroController) {
-      (introController as UgcIntroController).onChangeEpisode(item);
-    }
+    if (item != null) _playEpisode(item);
   }
 
   void _dismissUpNext() {
