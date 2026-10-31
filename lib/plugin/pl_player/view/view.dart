@@ -1896,6 +1896,7 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
 
         Obx(() {
           if (plPlayerController.dataStatus.loading ||
+              plPlayerController.seekLoading.value ||
               (plPlayerController.isBuffering.value &&
                   plPlayerController.playerStatus.isPlaying)) {
             return Center(

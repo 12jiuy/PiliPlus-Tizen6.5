@@ -127,6 +127,7 @@ class _TvVideoPageState extends State<TvVideoPage> {
   int _landingWaits = 0; // re-arm count for the landing timeout on slow seeks
   bool _wasPlayingAtScrubStart = true; // only auto-resume if playing pre-scrub
   DateTime _lastNativeSeekAt = DateTime.fromMillisecondsSinceEpoch(0);
+  Worker? _seekLoadingWorker; // ends a paused commit's loading indicator
   int? _videoShotCid; // invalidate videoShot on episode change
 
   /// Buffering watchdog: nudges the user toward a faster CDN line when playback
@@ -259,6 +260,7 @@ class _TvVideoPageState extends State<TvVideoPage> {
     _lagPollTimer?.cancel();
     _scrubCommitTimer?.cancel();
     _landingTimer?.cancel();
+    _endSeekLoading();
     _focusNode.dispose();
     _controlsVisible.close();
     _commentsVisible.close();
@@ -612,6 +614,7 @@ class _TvVideoPageState extends State<TvVideoPage> {
       _landingTimer?.cancel();
       _landingTimer = null;
       _pendingLandMs = null;
+      _endSeekLoading();
       _wasPlayingAtScrubStart = playerCtr.playerStatus.isPlaying;
       playerCtr.isSeeking.value = true; // freeze position.value vs the stream
       _scrubbing.value = true;
@@ -702,6 +705,8 @@ class _TvVideoPageState extends State<TvVideoPage> {
     // scrub started while paused must not force it back into playback.
     if (_wasPlayingAtScrubStart) {
       seekFuture.whenComplete(playerCtr.play);
+    } else {
+      _startSeekLoading();
     }
     _landingTimer?.cancel();
     _landingTimer = Timer(_landingTimeout, _onLandingTimeout);
@@ -742,6 +747,24 @@ class _TvVideoPageState extends State<TvVideoPage> {
     _landingTimer = null;
     _pendingLandMs = null;
     playerCtr.isSeeking.value = false; // stream resumes driving position.value
+    if (!playerCtr.isBuffering.value) _endSeekLoading();
+  }
+
+  /// A seek committed while paused loads with no indicator (the player shows
+  /// buffering only while playing), so show it from the commit until the seek
+  /// has landed and the player stops buffering.
+  void _startSeekLoading() {
+    _seekLoadingWorker?.dispose();
+    playerCtr.seekLoading.value = true;
+    _seekLoadingWorker = ever<bool>(playerCtr.isBuffering, (buffering) {
+      if (!buffering && _pendingLandMs == null) _endSeekLoading();
+    });
+  }
+
+  void _endSeekLoading() {
+    _seekLoadingWorker?.dispose();
+    _seekLoadingWorker = null;
+    plPlayerController?.seekLoading.value = false;
   }
 
   /// Kick off the Bilibili videoshot sprite fetch when scrubbing starts (reuses

@@ -85,6 +85,10 @@ class PlPlayerController with BlockConfigMixin {
   bool hasToasted = false;
   final RxBool isSeeking = false.obs;
 
+  /// Set by a page whose committed seek is still loading, so the buffering
+  /// indicator shows even while paused (it otherwise shows only when playing).
+  final RxBool seekLoading = false.obs;
+
   final RxInt position = RxInt(0);
 
   int get positionInMilliseconds =>
