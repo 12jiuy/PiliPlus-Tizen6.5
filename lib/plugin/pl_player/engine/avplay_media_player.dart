@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter/services.dart' show PlatformException;
 
 import 'package:video_player_avplay/video_player.dart';
@@ -487,6 +488,9 @@ class AvplayMediaPlayer implements AbstractMediaPlayer {
     controllerListenable.value = null;
     if (c != null) {
       c.removeListener(_onValueChanged);
+      // Let the view paint black over the old Hole before the native player
+      // (and the picture behind that Hole) goes away.
+      await SchedulerBinding.instance.endOfFrame;
       try {
         await c.dispose();
       } catch (_) {

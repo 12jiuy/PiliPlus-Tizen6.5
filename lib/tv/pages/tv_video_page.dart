@@ -11,15 +11,12 @@ import 'package:PiliPlus/pages/video/introduction/local/controller.dart';
 import 'package:PiliPlus/pages/video/introduction/pgc/controller.dart';
 import 'package:PiliPlus/pages/video/introduction/ugc/controller.dart';
 import 'package:PiliPlus/pages/video/related/controller.dart';
-import 'package:PiliPlus/models_new/pgc/pgc_info_model/episode.dart'
-    as pgc;
 import 'package:PiliPlus/models_new/video/video_detail/episode.dart';
 import 'package:PiliPlus/plugin/pl_player/models/play_repeat.dart';
 import 'package:PiliPlus/tv/utils/tv_open.dart';
 import 'package:PiliPlus/tv/widgets/tv_comments_panel.dart';
 import 'package:PiliPlus/tv/widgets/tv_end_card.dart';
 import 'package:PiliPlus/tv/widgets/tv_episode_bar.dart';
-import 'package:PiliPlus/tv/widgets/tv_pgc_episode_tile.dart';
 import 'package:PiliPlus/tv/widgets/tv_up_next_card.dart';
 import 'package:PiliPlus/pages/video/reply/controller.dart';
 import 'package:PiliPlus/pages/video/widgets/header_control.dart';
@@ -30,7 +27,6 @@ import 'package:PiliPlus/services/service_locator.dart';
 import 'package:PiliPlus/tv/tv_theme.dart';
 import 'package:PiliPlus/tv/widgets/tv_player_options.dart';
 import 'package:PiliPlus/utils/duration_utils.dart';
-import 'package:PiliPlus/utils/page_utils.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
 import 'package:PiliPlus/utils/theme_utils.dart';
@@ -255,7 +251,6 @@ class _TvVideoPageState extends State<TvVideoPage> {
 
   @override
   void dispose() {
-    _disposed.complete();
     _hideTimer?.cancel();
     _lagPollTimer?.cancel();
     _scrubCommitTimer?.cancel();
@@ -494,26 +489,16 @@ class _TvVideoPageState extends State<TvVideoPage> {
     _restoreControls();
   }
 
-  /// Completes when this page is disposed (its player torn down).
-  final Completer<void> _disposed = Completer<void>();
-
-  /// Play [ep] by closing this page and opening a fresh player page for it.
-  /// Switching in place (`onChangeEpisode`) leaves the new AVPlay player with
-  /// audio but no picture (its video plane never re-attaches), whereas opening
-  /// a page is the proven path; waiting for this page's disposal keeps the two
-  /// players from overlapping.
+  /// Switches to [ep] in place, as the mobile episode panel does.
   Future<void> _playEpisode(BaseEpisodeItem ep) async {
     _closeEpisodes();
     final cid = ep.cid;
     if (cid == null || cid == introController.cid.value) return;
     final ic = introController;
-    final bvid = ep.bvid ?? videoDetailController.bvid;
-    Get.back();
-    await _disposed.future;
-    if (ic is PgcIntroController && ep is pgc.EpisodeItem) {
-      tvPlayPgcEpisode(ic.pgcItem, ep);
-    } else {
-      PageUtils.toVideoPage(bvid: bvid, cid: cid, cover: ep.cover);
+    if (ic is PgcIntroController) {
+      ic.onChangeEpisode(ep);
+    } else if (ic is UgcIntroController) {
+      ic.onChangeEpisode(ep);
     }
   }
 

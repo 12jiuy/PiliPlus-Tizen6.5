@@ -38,6 +38,7 @@ import 'package:PiliPlus/pages/video/widgets/header_control.dart';
 import 'package:PiliPlus/plugin/pl_player/controller.dart';
 import 'package:PiliPlus/plugin/pl_player/engine/abstract_media_player.dart';
 import 'package:PiliPlus/plugin/pl_player/engine/avplay_media_player.dart';
+import 'package:PiliPlus/plugin/pl_player/engine/tizen_reveal_cover.dart';
 import 'package:PiliPlus/plugin/pl_player/engine/tizen_subtitle_overlay.dart';
 import 'package:PiliPlus/plugin/pl_player/models/bottom_control_type.dart';
 import 'package:PiliPlus/plugin/pl_player/models/data_status.dart';
@@ -2103,16 +2104,23 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
         if (controller == null) {
           return const ColoredBox(color: Colors.black);
         }
-        return Obx(
-          () {
-            final fit = plPlayerController.videoFit.value;
-            return ValueListenableBuilder<VideoPlayerValue>(
-              valueListenable: controller,
-              builder: (context, value, surface) =>
-                  _fitTizenOverlay(fit, value.size, surface!),
-              child: VideoPlayer(controller),
-            );
-          },
+        // Keyed by controller: each new player needs a fresh VideoPlayer
+        // state, which only forwards its display ROI when its cached rect
+        // changes, and a fresh cover over its Hole until it renders.
+        return TizenRevealCover(
+          key: ObjectKey(controller),
+          controller: controller,
+          child: Obx(
+            () {
+              final fit = plPlayerController.videoFit.value;
+              return ValueListenableBuilder<VideoPlayerValue>(
+                valueListenable: controller,
+                builder: (context, value, surface) =>
+                    _fitTizenOverlay(fit, value.size, surface!),
+                child: VideoPlayer(controller),
+              );
+            },
+          ),
         );
       },
     );
