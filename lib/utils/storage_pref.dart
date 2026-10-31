@@ -207,8 +207,11 @@ abstract final class Pref {
     return FullScreenMode.values[index];
   }
 
-  static BtmProgressBehavior get btmProgressBehavior =>
-      BtmProgressBehavior.values[_setting.get(
+  /// Tizen TV has no setting for this, so it is pinned to always-hide there
+  /// (the bar still appears while seeking).
+  static BtmProgressBehavior get btmProgressBehavior => PlatformUtils.isTizen
+      ? BtmProgressBehavior.alwaysHide
+      : BtmProgressBehavior.values[_setting.get(
         SettingBoxKey.btmProgressBehavior,
         defaultValue: BtmProgressBehavior.alwaysShow.index,
       )];
