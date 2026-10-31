@@ -18,6 +18,7 @@ class TvDataVideoCard extends StatefulWidget {
     this.autofocus = false,
     this.focusNode,
     this.onKeyEvent,
+    this.coverAspectRatio = 16 / 9,
   });
 
   final TvVideoData data;
@@ -25,6 +26,9 @@ class TvDataVideoCard extends StatefulWidget {
   final bool autofocus;
   final FocusNode? focusNode;
   final FocusOnKeyEventCallback? onKeyEvent;
+
+  /// Cover aspect ratio, see [TvCardCover.aspectRatio].
+  final double coverAspectRatio;
 
   @override
   State<TvDataVideoCard> createState() => _TvDataVideoCardState();
@@ -50,7 +54,11 @@ class _TvDataVideoCardState extends State<TvDataVideoCard> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              TvCardCover(data: data, focused: _focused),
+              TvCardCover(
+                data: data,
+                focused: _focused,
+                aspectRatio: widget.coverAspectRatio,
+              ),
               Expanded(child: _buildInfo(data)),
             ],
           ),

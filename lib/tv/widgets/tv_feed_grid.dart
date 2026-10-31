@@ -29,6 +29,7 @@ class TvFeedGrid<T> extends StatefulWidget {
     this.emptyMessage = '暂无内容',
     this.autofocusFirst = true,
     this.columns = TvTheme.gridColumns,
+    this.coverAspectRatio = 16 / 9,
     this.padding = const EdgeInsets.fromLTRB(
       TvTheme.screenPadding,
       TvTheme.gridTopPadding,
@@ -46,6 +47,10 @@ class TvFeedGrid<T> extends StatefulWidget {
   final bool autofocusFirst;
 
   final int columns;
+
+  /// Cover aspect ratio of every card, see [TvDataVideoCard.coverAspectRatio].
+  final double coverAspectRatio;
+
   final EdgeInsets padding;
 
   @override
@@ -103,7 +108,8 @@ class _TvFeedGridState<T> extends State<TvFeedGrid<T>> {
                 widget.padding.horizontal -
                 TvTheme.gridHSpacing * (widget.columns - 1)) /
             widget.columns;
-        final rowExtent = cardWidth * 9 / 16 + TvTheme.cardInfoHeight;
+        final rowExtent =
+            cardWidth / widget.coverAspectRatio + TvTheme.cardInfoHeight;
         return GridView.builder(
           controller: widget.controller.scrollController,
           padding: widget.padding,
@@ -129,6 +135,7 @@ class _TvFeedGridState<T> extends State<TvFeedGrid<T>> {
               focusNode: _focusNodes[index],
               onKeyEvent: (node, event) => _onCardKey(index, event),
               onSelect: () => widget.onOpen(item),
+              coverAspectRatio: widget.coverAspectRatio,
             );
           },
         );

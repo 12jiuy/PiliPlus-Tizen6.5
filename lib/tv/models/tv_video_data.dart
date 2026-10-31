@@ -1,7 +1,9 @@
 import 'package:PiliPlus/models/dynamics/result.dart';
 import 'package:PiliPlus/models/horizontal_video_model.dart';
+import 'package:PiliPlus/models_new/fav/fav_pgc/list.dart';
 import 'package:PiliPlus/models_new/history/list.dart';
 import 'package:PiliPlus/models_new/live/live_feed_index/card_data_list_item.dart';
+import 'package:PiliPlus/models_new/pgc/pgc_index_result/list.dart';
 import 'package:PiliPlus/utils/duration_utils.dart';
 import 'package:PiliPlus/utils/num_utils.dart';
 
@@ -78,6 +80,29 @@ class TvVideoData {
       durationText: item.duration > 0
           ? DurationUtils.formatDuration(item.duration)
           : null,
+    );
+  }
+
+  /// Maps a 番剧 index item ([PgcIndexItem]): the badge (e.g. `会员专享`)
+  /// takes the meta line and the episode summary (e.g. `全12话`) the badge.
+  static TvVideoData fromPgcIndex(PgcIndexItem item) {
+    return TvVideoData(
+      title: item.title ?? '',
+      cover: item.cover,
+      ownerName: item.badge?.isNotEmpty == true ? item.badge : null,
+      durationText: item.indexShow?.isNotEmpty == true ? item.indexShow : null,
+    );
+  }
+
+  /// Maps a followed season ([FavPgcItemModel], 我的追番): the meta line shows
+  /// the watch progress (e.g. `看到第3话`), the badge the latest episode.
+  static TvVideoData fromFavPgc(FavPgcItemModel item) {
+    final latest = item.newEp?.indexShow;
+    return TvVideoData(
+      title: item.title ?? '',
+      cover: item.cover,
+      ownerName: item.progress?.isNotEmpty == true ? item.progress : null,
+      durationText: latest?.isNotEmpty == true ? latest : null,
     );
   }
 
