@@ -3,7 +3,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 
 import 'package:PiliPlus/plugin/pl_player/engine/abstract_media_player.dart';
 import 'package:PiliPlus/plugin/pl_player/engine/avplay_media_player.dart';
-import 'package:PiliPlus/plugin/pl_player/engine/bili_dash_proxy.dart';
+import 'package:PiliPlus/plugin/pl_player/engine/isolate_dash_proxy.dart';
 import 'package:PiliPlus/plugin/pl_player/engine/media_kit_media_player.dart';
 import 'package:PiliPlus/utils/platform_utils.dart';
 
@@ -18,13 +18,14 @@ bool get useAvplayEngine => PlatformUtils.isTizen;
 /// audio urls into a single synthetic manifest (and forwards CDN headers) for
 /// the AVPlay backend, which cannot open two streams.
 ///
-/// Created once and shared by every [AvplayMediaPlayer]; the proxy starts its
-/// http server lazily on first source that needs it, so constructing it here is
-/// cheap and safe even on builds that never play a dual-stream source.
-BiliDashProxy? _sharedDashProxy;
+/// Created once and shared by every [AvplayMediaPlayer]; it runs on its own
+/// isolate (see [IsolateDashProxy]), spawned lazily on the first source that
+/// needs it, so constructing it here is cheap and safe even on builds that
+/// never play anything.
+IsolateDashProxy? _sharedDashProxy;
 
-/// Lazily-constructed accessor for the shared [BiliDashProxy] singleton.
-BiliDashProxy get _dashProxy => _sharedDashProxy ??= BiliDashProxy();
+/// Lazily-constructed accessor for the shared proxy singleton.
+IsolateDashProxy get _dashProxy => _sharedDashProxy ??= IsolateDashProxy();
 
 /// Builds the AVPlay-backed player for Samsung Tizen TVs.
 ///

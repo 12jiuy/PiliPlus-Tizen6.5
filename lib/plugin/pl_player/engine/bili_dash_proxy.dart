@@ -7,6 +7,27 @@ import 'package:flutter/foundation.dart';
 
 import 'package:PiliPlus/plugin/pl_player/engine/abstract_media_player.dart';
 
+/// Hands out loopback urls the AVPlay engine can open for Bilibili sources;
+/// see [BiliDashProxy] for what each url serves.
+abstract interface class DashProxy {
+  /// See [BiliDashProxy.urlFor].
+  Future<String> urlFor(
+    MediaSource source, {
+    String? referer,
+    String? userAgent,
+    DashStreamMeta? videoMeta,
+    DashStreamMeta? audioMeta,
+    Duration? duration,
+  });
+
+  /// See [BiliDashProxy.urlForLiveProgressive].
+  Future<String> urlForLiveProgressive(
+    String m3u8Url, {
+    String? referer,
+    String? userAgent,
+  });
+}
+
 /// A localhost server that adapts Bilibili media streams for the Samsung TV
 /// video engine (`video_player_avplay`). It handles two source shapes:
 ///
@@ -45,7 +66,7 @@ import 'package:PiliPlus/plugin/pl_player/engine/abstract_media_player.dart';
 /// REAL codec / dimensions (threaded in from Bilibili's play-url DASH metadata
 /// via [DashStreamMeta]) so the engine accepts HEVC/AV1/FLAC as readily as AVC;
 /// a missing field falls back to an AVC/AAC-shaped default.
-class BiliDashProxy {
+class BiliDashProxy implements DashProxy {
   BiliDashProxy();
 
   /// Whether the bundled `libdash.so` carries the Bilibili Referer binary patch
@@ -124,6 +145,7 @@ class BiliDashProxy {
   /// media length used for `mediaPresentationDuration`. All are optional.
   ///
   /// Auto-[start]s the server if it is not already listening.
+  @override
   Future<String> urlFor(
     MediaSource source, {
     String? referer,
@@ -166,6 +188,7 @@ class BiliDashProxy {
   /// fragments into ONE continuous fMP4 byte stream — no DASH manifest, no
   /// segments, nothing for GstDashSrc to reload mid-stream (which is what stalls
   /// the manifest path). Plays on the CAPI (`general`) engine like a durl mp4.
+  @override
   Future<String> urlForLiveProgressive(
     String m3u8Url, {
     String? referer,

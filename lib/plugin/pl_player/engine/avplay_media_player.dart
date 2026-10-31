@@ -36,10 +36,9 @@ import 'bili_dash_proxy.dart';
 class AvplayMediaPlayer implements AbstractMediaPlayer {
   /// Creates an AVPlay-backed player. A custom [proxy] may be injected for
   /// testing; otherwise a default [BiliDashProxy] is used.
-  AvplayMediaPlayer({BiliDashProxy? proxy})
-      : _proxy = proxy ?? BiliDashProxy();
+  AvplayMediaPlayer({DashProxy? proxy}) : _proxy = proxy ?? BiliDashProxy();
 
-  final BiliDashProxy _proxy;
+  final DashProxy _proxy;
 
   // ---- Underlying native controller (recreated on every [open]) ----
   VideoPlayerController? _controller;
