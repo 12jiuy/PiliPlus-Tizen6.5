@@ -68,7 +68,11 @@ flutter-tizen build tpk --release --dart-define=IS_TIZEN=true
 
 ## Disclaimer
 
-This project is for learning and personal testing only. Please delete it within 24 hours of downloading. All APIs are collected from Bilibili's official website; no cracked content is provided.
+PiliPlus-Tizen is an unofficial, third-party client. It is not affiliated with, endorsed by, or supported by Bilibili or Samsung; "Bilibili" and related names and logos are trademarks of their respective owners.
+
+The app does not host or distribute any video content. It plays content from Bilibili's own services, through your own account, using the publicly accessible interfaces that the official site and apps use. It does not unlock paid or member-only content.
+
+You are responsible for using it in compliance with the laws that apply to you, Bilibili's terms of service, and the licensing terms of the content you watch. The software is provided "as is", without warranty of any kind, under the GPL-3.0 license.
 
 ## Credits
 
