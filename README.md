@@ -1,102 +1,82 @@
 <div align="center">
     <img width="160" height="160" src="assets/images/logo/logo.png">
     <h1>PiliPlus-Tizen</h1>
-    <p><b>A Samsung Tizen TV (D-pad) port of <a href="https://github.com/bggRGjQaUbCoE/PiliPlus">PiliPlus</a>, the Flutter Bilibili client.</b></p>
+    <p><b>A Bilibili client for Samsung Tizen TVs, driven by the remote's D-pad.</b></p>
 </div>
 
-![platform](https://img.shields.io/badge/platform-Tizen%209.0-blue)
+![platform](https://img.shields.io/badge/Tizen-6.5%2B-blue)
 ![flutter](https://img.shields.io/badge/flutter--tizen-3.44-02569B)
+![release](https://img.shields.io/github/v/release/12jiuy/PiliPlus-Tizen)
 ![license](https://img.shields.io/badge/license-GPL--3.0-green)
-![fork](https://img.shields.io/badge/fork%20of-PiliPlus-lightgrey)
 
 <p align="center"><b>English</b> · <a href="README.zh-CN.md">简体中文</a></p>
 
-This is a fork of [**PiliPlus**](https://github.com/bggRGjQaUbCoE/PiliPlus) (a Flutter-based third-party Bilibili client) adapted to run on **Samsung Tizen smart TVs** via [`flutter-tizen`](https://github.com/flutter-tizen/flutter-tizen), driven entirely by the TV remote's **D-pad**. It has been developed and tested on a **Samsung S90F (77" 4K OLED, Tizen 9.0)**.
+PiliPlus-Tizen brings the [PiliPlus](https://github.com/bggRGjQaUbCoE/PiliPlus) Flutter client to Samsung smart TVs through [`flutter-tizen`](https://github.com/flutter-tizen/flutter-tizen). It builds on [jackie099/PiliPlus-Tizen](https://github.com/jackie099/PiliPlus-Tizen), the original Tizen 9 port, and extends it to **Tizen 6.5** TVs, with a 番剧 (anime/drama) section, continuous playback, and a reworked playback pipeline for smoother seeking.
 
-The mobile/desktop targets from upstream are untouched — all TV code is additive and gated behind `PlatformUtils.isTizen`, so the same tree still builds for Android / iOS / Windows / Linux.
+Tested on a **Samsung QN65S95B (Tizen 6.5)**. The package targets API 6.5, so it should also install on newer Tizen TVs.
 
----
+## Install
 
-## Why a fork (the hard part)
+1. Download the `.tpk` from [Releases](https://github.com/12jiuy/PiliPlus-Tizen/releases).
+2. Enable developer mode on the TV (Apps → enter `12345` → Developer mode On, Host PC IP = your computer).
+3. Install it with Apps2Samsung, Tizen Studio, or `sdb install <file>.tpk`.
 
-Tizen's Flutter embedder cannot use `media_kit` (upstream's video engine — no libmpv on Tizen), and the platform's native player (`video_player_avplay`, backed by the Tizen CAPI `MediaPlayer`) **cannot** play Bilibili's DASH streams directly:
+## Features
 
-1. **Split video + audio.** Bilibili DASH ships video and audio as two separate fMP4 URLs; the native player wants one source.
-2. **Mandatory `Referer`.** The Bilibili CDN returns `403` without `Referer: https://www.bilibili.com`, and the player drops custom request headers on the media socket.
-3. **No external HTTPS streaming.** PlusPlayer/CAPI cannot stream arbitrary external HTTPS reliably.
+**Browsing**
+- Home, trending, search, dynamics and user pages, all navigable with the D-pad
+- 番剧 tab and season pages; a poster opens an inline episode row that starts at the episode you last watched
 
-The solution is a **Dart localhost reverse-proxy** ([`lib/plugin/pl_player/engine/bili_dash_proxy.dart`](lib/plugin/pl_player/engine/bili_dash_proxy.dart)) that:
+**Playback**
+- Up to 4K and HDR 真彩 (HDR10); the quality menu hides what Samsung TVs cannot decode (Dolby Vision, HDR Vivid, 8K)
+- Scrubber: Left/Right move a target with a thumbnail preview, and a single seek is committed on OK. While playing it also commits after a second of inactivity; while paused only OK commits, and a loading indicator shows the load's progress
+- Press Down in the player for the episode / 分P bar; switching episodes keeps the same player, so the picture doesn't flash
+- 番剧 auto-advance: when the ending starts, it keeps playing with an "Up next" countdown card instead of being skipped
+- Options panel (Up): quality, audio, decoder, danmaku, subtitles, chapters, aspect ratio, speed, play order, CDN line with speed test
 
-- Serves a `127.0.0.1` URL to the native player (which it *can* stream).
-- Injects the `Referer` / `User-Agent` the player drops, and forwards `Range` requests so seeking works.
-- Synthesizes a truthful **static DASH `.mpd`** from the split streams, advertising the real codecs (HEVC / AV1 / FLAC / **E-AC-3**) so the decoder accepts them.
+## How playback works
 
-The rest of the port is a from-scratch **TV UI layer** ([`lib/tv/`](lib/tv/)) that reuses upstream's controllers and networking but replaces the touch chrome with a D-pad-navigable interface.
+Tizen has no libmpv, so upstream's `media_kit` engine is replaced by the TV's native AVPlay player ([`video_player_avplay`](https://github.com/jackie099/plugins)). AVPlay can't play Bilibili's streams directly: video and audio come as separate DASH files, and the CDN rejects requests without a `Referer` header, which AVPlay does not send.
 
----
+[`BiliDashProxy`](lib/plugin/pl_player/engine/bili_dash_proxy.dart) bridges that gap on `127.0.0.1`:
 
-## TV features
+- Generates a DASH manifest for the two streams, with their real codecs, so the TV decoder accepts them
+- Relays every segment request to the CDN with `Referer` / `User-Agent` added and `Range` passed through
+- Runs on its own isolate, so a seek (which blocks the platform thread on Tizen) never waits on the proxy
+- Keeps each stream's init segment in memory, since AVPlay re-requests it after every seek
+- Retries a request on Bilibili's backup CDN URL when the primary answers 403 / 5xx or doesn't respond within 3 s
 
-- **D-pad navigation** — home / trending / search / dynamics / user, a fullscreen video page, and a TV settings screen, all remote-driven.
-- **4K HEVC + HDR10** — auto-selects the highest playable tier on the S90F (HDR真彩·H.265). Dolby Vision (126) and 8K (127) are excluded — the S90F's decoder rejects 8K (`Not supported format`) and Samsung never licenses DV.
-- **Dolby Atmos (E-AC-3 / ec-3)** — proven to decode on the S90F. The proxy advertises `ec-3` at 48 kHz with the Dolby channel-configuration scheme (`F801` = 5.1) + the JOC `SupplementalProperty`, and an opt-in `preferDolbyAtmos` preference auto-selects the Atmos track on every video that carries one.
-- **Apple-TV-style scrubber** — Left/Right nudge a **visual** target (10s taps, hold to accelerate) on a scrub bar with a Bilibili **videoshot thumbnail preview** + target-time/delta; exactly **one** native seek commits on OK or after a short idle. (This replaced per-keypress seeking, which raced the AVPlay pipeline to the end.)
-- **CDN line picker + speed test** — Bilibili's per-object CDN throughput varies wildly; when a stream is on a slow mirror the player nudges you to switch lines (in-player and in settings), with a speed test against the *currently playing* stream.
-- **In-player options panel** — quality, audio quality, decode format, danmaku toggle, subtitles, chapters (view points), episode / 分P picker + prev/next, aspect ratio, playback speed/order, and like / favourite.
+The TV UI lives in [`lib/tv/`](lib/tv/). It reuses upstream's controllers and networking, and every TV-specific change is gated behind `PlatformUtils.isTizen`, so the other platforms build as before.
 
-## Architecture
+## Build
 
-| Layer | Where | Notes |
-|------|-------|-------|
-| Tizen embedder & manifest | [`tizen/`](tizen/) | flutter-tizen project (`Runner.csproj`, `tizen-manifest.xml`), app icon |
-| Native video plugin | [`video_player_avplay` fork](https://github.com/jackie099/plugins) (git dep) | CAPI `MediaPlayer` engine (hole-punched HW overlay), selected via the `playerEngine` option — proposed upstream in [flutter-tizen/plugins#1064](https://github.com/flutter-tizen/plugins/pull/1064) |
-| Video engine | [`lib/plugin/pl_player/engine/`](lib/plugin/pl_player/engine/) | `AvplayMediaPlayer` + the `BiliDashProxy` + Tizen subtitle overlay |
-| TV UI | [`lib/tv/`](lib/tv/) | Home, search, video page, settings, the D-pad options panel |
-| Shared edits | `lib/pages/video/controller.dart`, `lib/plugin/pl_player/controller.dart`, … | additive, `PlatformUtils.isTizen`-guarded |
-
-Video renders on a **native hardware overlay** (hole-punched), so Flutter only draws the UI/danmaku on top — which is why the app ships with **Skia** (Impeller's GLES backend renders dense Chinese text noticeably softer, and it doesn't touch the hardware-video path anyway).
-
-## Build & run
-
-Prerequisites: [`flutter-tizen`](https://github.com/flutter-tizen/flutter-tizen) (Flutter 3.44), the Tizen SDK, and a Tizen 9.0 TV in developer mode paired over `sdb`.
+Requires [`flutter-tizen`](https://github.com/flutter-tizen/flutter-tizen) (Flutter 3.44), the Tizen SDK, and a Samsung certificate profile for signing.
 
 ```bash
-# one-time: point sdb at the TV
 sdb connect <TV_IP>:26101
 
-# debug (Skia — for development)
-export LD_LIBRARY_PATH="$HOME/projects/tizen/tizen-libs:$LD_LIBRARY_PATH"
+# development
 flutter-tizen run -d <TV_IP>:26101 --dart-define=IS_TIZEN=true
 
-# release (AOT-optimized, Skia — what you install day-to-day)
-flutter-tizen run --release -d <TV_IP>:26101 --dart-define=IS_TIZEN=true
-# or build a standalone TPK:
+# release package (build/tizen/tpk/*.tpk)
 flutter-tizen build tpk --release --dart-define=IS_TIZEN=true
 ```
 
-`--dart-define=IS_TIZEN=true` sets the compile-time `PlatformUtils.isTizen` flag that routes into the TV UI and the AVPlay engine. Do **not** pass `--enable-impeller` (see the Skia note above).
-
-## Known limitations
-
-- **8K** is excluded — the S90F decoder rejects it (it's a 4K-class decoder).
-- **Dolby Vision** video is excluded (Samsung licensing); HDR10 is used instead. Atmos audio is independent and works on DV uploads.
-- **Atmos passthrough** to an eARC soundbar depends on the TV's audio settings (eARC = Auto, Digital Output = Pass-Through, Atmos Compatibility = On); the TV's built-in speakers decode the 5.1 core.
-- Tested only on the **S90F / Tizen 9.0**; other Tizen TVs are untried.
+`IS_TIZEN=true` is required: it switches on the TV UI and the AVPlay engine. The app renders with Skia, so don't pass `--enable-impeller`.
 
 ---
 
-## 声明 / Disclaimer
+## Disclaimer
 
-此项目基于 [PiliPlus](https://github.com/bggRGjQaUbCoE/PiliPlus) 二次开发，仅用于学习与个人测试，请于下载后 24 小时内删除。所用 API 皆从官方网站收集，不提供任何破解内容。
+This project is for learning and personal testing only. Please delete it within 24 hours of downloading. All APIs are collected from Bilibili's official website; no cracked content is provided.
 
-Upstream lineage: [bggRGjQaUbCoE/PiliPlus](https://github.com/bggRGjQaUbCoE/PiliPlus) → [orz12/PiliPalaX](https://github.com/orz12/PiliPalaX) → [guozhigq/pilipala](https://github.com/guozhigq/pilipala). Thanks to the original authors for their open-source work.
+## Credits
 
-## 致谢 / Acknowledgements
-
-- Upstream [PiliPlus](https://github.com/bggRGjQaUbCoE/PiliPlus) and its lineage
+- [jackie099/PiliPlus-Tizen](https://github.com/jackie099/PiliPlus-Tizen): the original Tizen port, its D-pad UI and the DASH proxy
+- [PiliPlus](https://github.com/bggRGjQaUbCoE/PiliPlus) and its lineage, [PiliPalaX](https://github.com/orz12/PiliPalaX) and [pilipala](https://github.com/guozhigq/pilipala)
 - [flutter-tizen](https://github.com/flutter-tizen/flutter-tizen) and `video_player_avplay`
 - [bilibili-API-collect](https://github.com/SocialSisterYi/bilibili-API-collect)
 
 ## License
 
-[GPL-3.0](LICENSE), inherited from upstream PiliPlus.
+[GPL-3.0](LICENSE), inherited from PiliPlus.
