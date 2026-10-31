@@ -95,6 +95,18 @@ class BiliDashProxy implements DashProxy {
     ..connectionTimeout = const Duration(seconds: 15);
 
   final Map<String, _ProxyEntry> _registry = <String, _ProxyEntry>{};
+
+  /// Registrations kept; older ones (and their cached heads) are dropped.
+  /// Only one player plays at a time, so this just covers a switch where the
+  /// next source registers before the previous player is torn down.
+  static const int _maxEntries = 4;
+
+  void _register(String token, _ProxyEntry entry) {
+    _registry[token] = entry;
+    while (_registry.length > _maxEntries) {
+      _registry.remove(_registry.keys.first);
+    }
+  }
   final Random _rng = Random.secure();
 
   HttpServer? _server;
@@ -173,7 +185,7 @@ class BiliDashProxy implements DashProxy {
           ? duration.inMilliseconds / 1000.0
           : null,
     );
-    _registry[token] = entry;
+    _register(token, entry);
 
     if (source.hasSeparateAudio) {
       return '$_base/mpd/$token.mpd';
@@ -196,7 +208,7 @@ class BiliDashProxy implements DashProxy {
   }) async {
     if (_server == null) await start();
     final String token = _newToken();
-    _registry[token] = _ProxyEntry(
+    _register(token, _ProxyEntry(
       videoUri: m3u8Url,
       audioUri: null,
       referer: (referer != null && referer.isNotEmpty)
@@ -206,7 +218,7 @@ class BiliDashProxy implements DashProxy {
           ? userAgent
           : _defaultUserAgent,
       isLiveHls: true,
-    );
+    ));
     return '$_base/live-prog/$token.mp4';
   }
 
@@ -320,7 +332,13 @@ class BiliDashProxy implements DashProxy {
     }
     final DashStreamMeta? meta =
         file == 'v.m4s' ? entry.videoMeta : entry.audioMeta;
-    await _proxy(request, target, entry, alternates: meta?.alternateUrls);
+    await _proxy(
+      request,
+      target,
+      entry,
+      alternates: meta?.alternateUrls,
+      headKey: file,
+    );
   }
 
   /// `GET /live-prog/<token>.mp4` — concatenate the live fMP4 fragments into ONE
@@ -502,6 +520,11 @@ class BiliDashProxy implements DashProxy {
   /// ~0.2s; a segment body may then legitimately take seconds.
   static const Duration _answerTimeout = Duration(seconds: 3);
 
+  /// Largest `bytes=0-N` response kept in [_ProxyEntry.heads]. The player
+  /// re-requests a stream's init + index (~1KB) after every seek; anything
+  /// this small at offset 0 is that head, never media.
+  static const int _headCacheMax = 64 * 1024;
+
   /// Issue [targetUri] upstream with Referer/User-Agent injected and the
   /// client's `Range` copied through, then stream status + headers + bytes back.
   ///
@@ -510,15 +533,38 @@ class BiliDashProxy implements DashProxy {
   /// the next one; later requests still start from [targetUri]. A CDN node
   /// can briefly refuse the re-requests that follow a seek, which otherwise
   /// failed playback outright.
+  ///
+  /// With [headKey] (the stream), a small `bytes=0-N` head is kept in memory
+  /// on [entry] and served from there when the player asks for it again.
   Future<void> _proxy(
     HttpRequest request,
     String targetUri,
     _ProxyEntry entry, {
     List<String>? alternates,
+    String? headKey,
   }) async {
     final HttpResponse out = request.response;
     HttpClientResponse? upstream;
     final String? range = request.headers.value(HttpHeaders.rangeHeader);
+    final int? headEnd = headKey == null ? null : _headEnd(range);
+    final String? cacheKey = headEnd == null ? null : '$headKey $range';
+    final _CachedHead? cached = cacheKey == null ? null : entry.heads[cacheKey];
+    if (cached != null) {
+      out.statusCode = HttpStatus.partialContent;
+      out.headers
+        ..set(HttpHeaders.contentRangeHeader, cached.contentRange)
+        ..set(HttpHeaders.acceptRangesHeader, 'bytes')
+        ..set(HttpHeaders.accessControlAllowOriginHeader, '*');
+      if (cached.contentType != null) {
+        out.headers.set(HttpHeaders.contentTypeHeader, cached.contentType!);
+      }
+      out.contentLength = cached.body.length;
+      try {
+        out.add(cached.body);
+        await out.close();
+      } catch (_) {} // player hung up
+      return;
+    }
     final List<String> candidates = [
       targetUri,
       ...?alternates?.where((u) => u != targetUri),
@@ -581,7 +627,26 @@ class BiliDashProxy implements DashProxy {
         ..set(HttpHeaders.acceptRangesHeader, 'bytes')
         ..set(HttpHeaders.accessControlAllowOriginHeader, '*');
 
-      await out.addStream(upstream);
+      final String? contentRange =
+          upstream.headers.value(HttpHeaders.contentRangeHeader);
+      if (cacheKey != null &&
+          upstream.statusCode == HttpStatus.partialContent &&
+          contentRange != null &&
+          upLen == headEnd! + 1) {
+        final BytesBuilder bb = BytesBuilder(copy: false);
+        await upstream.forEach(bb.add);
+        final Uint8List body = bb.takeBytes();
+        if (body.length == upLen) {
+          entry.heads[cacheKey] = _CachedHead(
+            contentRange: contentRange,
+            contentType: upstream.headers.value(HttpHeaders.contentTypeHeader),
+            body: body,
+          );
+        }
+        out.add(body);
+      } else {
+        await out.addStream(upstream);
+      }
       await out.close();
     } catch (e) {
       // Ensure the upstream socket is drained/closed on failure.
@@ -590,6 +655,15 @@ class BiliDashProxy implements DashProxy {
       } catch (_) {}
       await _safeClose(out, HttpStatus.badGateway);
     }
+  }
+
+  /// The last byte of a `bytes=0-N` [range] small enough to be a stream's
+  /// head (see [_headCacheMax]), else null.
+  static int? _headEnd(String? range) {
+    final RegExpMatch? m =
+        RegExp(r'^bytes=0-(\d+)$').firstMatch(range?.trim() ?? '');
+    final int? end = m == null ? null : int.tryParse(m.group(1)!);
+    return end != null && end < _headCacheMax ? end : null;
   }
 
   /// Open [uri] upstream with the headers AVPlay drops, forwarding [range]
@@ -1162,6 +1236,23 @@ class _ProxyEntry {
   /// manifest then falls back to a BaseURL-only Representation).
   _SegBase? videoSeg;
   _SegBase? audioSeg;
+
+  /// Stream heads (init + index) already relayed, keyed by stream and range;
+  /// see [BiliDashProxy._proxy]. Memory only, dropped with the entry.
+  final Map<String, _CachedHead> heads = <String, _CachedHead>{};
+}
+
+/// A relayed `bytes=0-N` response, replayed as-is.
+class _CachedHead {
+  const _CachedHead({
+    required this.contentRange,
+    required this.contentType,
+    required this.body,
+  });
+
+  final String contentRange;
+  final String? contentType;
+  final Uint8List body;
 }
 
 /// The byte-ranges an on-demand DASH `Representation` needs so a fragmented-MP4
