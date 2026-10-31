@@ -116,7 +116,10 @@ class _TvEpisodeBarState extends State<TvEpisodeBar> {
               SizedBox(
                 height: TvPgcEpisodeTile.height + TvTheme.heroRowOverscan * 2,
                 child: LayoutBuilder(
-                  builder: (context, constraints) => ListView.separated(
+                  // A fixed itemExtent lets the list jump straight to the
+                  // initial offset; with variable extents it lays out every
+                  // tile before the current one first (seconds for ~100).
+                  builder: (context, constraints) => ListView.builder(
                     controller: _scroll ??= ScrollController(
                       initialScrollOffset: tvEpisodeRowOffset(
                         index: _current,
@@ -125,22 +128,28 @@ class _TvEpisodeBarState extends State<TvEpisodeBar> {
                       ),
                     ),
                     scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: TvTheme.screenPadding,
-                      vertical: TvTheme.heroRowOverscan,
+                    // Each item is a tile plus its trailing gap, so the end
+                    // padding drops one gap.
+                    padding: const EdgeInsets.fromLTRB(
+                      TvTheme.screenPadding,
+                      TvTheme.heroRowOverscan,
+                      TvTheme.screenPadding - TvPgcEpisodeTile.gap,
+                      TvTheme.heroRowOverscan,
                     ),
+                    itemExtent: TvPgcEpisodeTile.width + TvPgcEpisodeTile.gap,
                     itemCount: episodes.length,
-                    separatorBuilder: (_, _) =>
-                        const SizedBox(width: TvPgcEpisodeTile.gap),
                     itemBuilder: (context, i) {
                       final ep = episodes[i];
-                      return TvPgcEpisodeTile(
-                        episode: ep is EpisodeItem ? ep : null,
-                        label: ep is EpisodeItem ? null : _partLabel(ep, i),
-                        highlighted: i == _current,
-                        focusNode: _nodes[i],
-                        onKeyEvent: (node, event) => _onKey(i, event),
-                        onSelect: () => widget.onSelect(ep),
+                      return Align(
+                        alignment: Alignment.centerLeft,
+                        child: TvPgcEpisodeTile(
+                          episode: ep is EpisodeItem ? ep : null,
+                          label: ep is EpisodeItem ? null : _partLabel(ep, i),
+                          highlighted: i == _current,
+                          focusNode: _nodes[i],
+                          onKeyEvent: (node, event) => _onKey(i, event),
+                          onSelect: () => widget.onSelect(ep),
+                        ),
                       );
                     },
                   ),
