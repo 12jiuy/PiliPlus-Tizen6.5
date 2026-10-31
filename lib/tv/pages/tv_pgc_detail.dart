@@ -1,19 +1,18 @@
 import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
 import 'package:PiliPlus/http/loading_state.dart';
 import 'package:PiliPlus/http/search.dart';
-import 'package:PiliPlus/models/common/video/video_type.dart';
 import 'package:PiliPlus/models_new/pgc/pgc_info_model/episode.dart';
 import 'package:PiliPlus/models_new/pgc/pgc_info_model/result.dart';
 import 'package:PiliPlus/tv/focus/tv_focusable.dart';
 import 'package:PiliPlus/tv/tv_theme.dart';
 import 'package:PiliPlus/tv/widgets/tv_feed_grid.dart';
-import 'package:PiliPlus/utils/page_utils.dart';
+import 'package:PiliPlus/tv/widgets/tv_pgc_episode_tile.dart';
 import 'package:PiliPlus/utils/theme_utils.dart';
 import 'package:flutter/material.dart';
 
 /// TV 番剧 detail: poster + info header, a 继续观看 button, and the season's
 /// episodes as a D-pad grid (paged into [_rangeSize]-episode ranges for long
-/// series). Picking an episode plays it the same way [PageUtils.viewPgc] does;
+/// series). Picking an episode plays it via [tvPlayPgcEpisode];
 /// returning from the player re-fetches the season so the 上次看到 marker and
 /// the button follow the new watch progress.
 class TvPgcDetailPage extends StatefulWidget {
@@ -29,12 +28,8 @@ class _TvPgcDetailPageState extends State<TvPgcDetailPage> {
   static const double _ds = TvTheme.designScale;
   static const int _rangeSize = 50;
   static const double _posterWidth = 280 * _ds;
-  static const double _tileWidth = 200 * _ds;
-  static const double _tileHeight = 92 * _ds;
-  static const double _tileGap = 16 * _ds;
-  static const BorderRadius _tileRadius = BorderRadius.all(
-    Radius.circular(12 * _ds),
-  );
+  static const double _tileGap = TvPgcEpisodeTile.gap;
+  static const BorderRadius _tileRadius = TvPgcEpisodeTile.radius;
 
   LoadingState<PgcInfoModel> _state = LoadingState<PgcInfoModel>.loading();
 
@@ -53,7 +48,7 @@ class _TvPgcDetailPageState extends State<TvPgcDetailPage> {
     setState(() {
       _state = res;
       if (initial) {
-        final last = _lastIndex(res.dataOrNull);
+        final last = tvPgcLastIndex(res.dataOrNull);
         if (last != null) _range = last ~/ _rangeSize;
       }
     });
@@ -61,32 +56,9 @@ class _TvPgcDetailPageState extends State<TvPgcDetailPage> {
 
   List<EpisodeItem> _episodes(PgcInfoModel? info) => info?.episodes ?? const [];
 
-  /// Index of the last-watched episode, or null when nothing was watched.
-  int? _lastIndex(PgcInfoModel? info) {
-    final lastEpId = info?.userStatus?.progress?.lastEpId;
-    if (lastEpId == null) return null;
-    final i = _episodes(info).indexWhere((e) => e.epId == lastEpId);
-    return i < 0 ? null : i;
-  }
-
   Future<void> _play(PgcInfoModel info, EpisodeItem episode) async {
-    await PageUtils.toVideoPage(
-      videoType: VideoType.pgc,
-      bvid: episode.bvid!,
-      cid: episode.cid!,
-      seasonId: info.seasonId,
-      epId: episode.epId,
-      pgcType: info.type,
-      cover: episode.cover,
-      extraArguments: {'pgcItem': info},
-    );
+    await tvPlayPgcEpisode(info, episode);
     if (mounted) _load();
-  }
-
-  /// `第3话` for numbered episodes, otherwise the raw title (e.g. `PV`).
-  static String _epLabel(EpisodeItem episode) {
-    final title = episode.title ?? '';
-    return int.tryParse(title) != null ? '第$title话' : title;
   }
 
   @override
@@ -115,7 +87,7 @@ class _TvPgcDetailPageState extends State<TvPgcDetailPage> {
 
   Widget _buildContent(PgcInfoModel info) {
     final episodes = _episodes(info);
-    final last = _lastIndex(info);
+    final last = tvPgcLastIndex(info);
     final rangeCount = (episodes.length + _rangeSize - 1) ~/ _rangeSize;
     final start = _range * _rangeSize;
     final end = (start + _rangeSize).clamp(0, episodes.length);
@@ -156,7 +128,11 @@ class _TvPgcDetailPageState extends State<TvPgcDetailPage> {
               runSpacing: _tileGap,
               children: [
                 for (var i = start; i < end; i++)
-                  _buildEpisodeTile(info, episodes[i], isLast: i == last),
+                  TvPgcEpisodeTile(
+                    episode: episodes[i],
+                    isLast: i == last,
+                    onSelect: () => _play(info, episodes[i]),
+                  ),
               ],
             ),
         ],
@@ -233,7 +209,7 @@ class _TvPgcDetailPageState extends State<TvPgcDetailPage> {
                         const SizedBox(width: TvTheme.buttonIconGap),
                         Text(
                           last != null
-                              ? '继续观看 ${_epLabel(resume)}'
+                              ? '继续观看 ${tvPgcEpLabel(resume)}'
                               : '开始观看',
                           style: TvTheme.buttonLabel,
                         ),
@@ -266,69 +242,6 @@ class _TvPgcDetailPageState extends State<TvPgcDetailPage> {
           borderRadius: _tileRadius,
         ),
         child: Text(label, style: TvTheme.buttonLabel),
-      ),
-    );
-  }
-
-  Widget _buildEpisodeTile(
-    PgcInfoModel info,
-    EpisodeItem episode, {
-    required bool isLast,
-  }) {
-    final badge = episode.badge;
-    return TvFocusable(
-      borderRadius: _tileRadius,
-      focusScale: TvTheme.focusScaleSmall,
-      dimWhenUnfocused: false,
-      onSelect: () => _play(info, episode),
-      child: Container(
-        width: _tileWidth,
-        height: _tileHeight,
-        padding: const EdgeInsets.symmetric(
-          horizontal: 16 * _ds,
-          vertical: 12 * _ds,
-        ),
-        decoration: BoxDecoration(
-          color: TvTheme.surface,
-          borderRadius: _tileRadius,
-          border: isLast
-              ? Border.all(color: TvTheme.brandPink, width: 2 * _ds)
-              : null,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Row(
-              children: [
-                Flexible(
-                  child: Text(
-                    _epLabel(episode),
-                    style: TvTheme.buttonLabel.copyWith(
-                      color: isLast ? TvTheme.brandPink : null,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (badge != null && badge.isNotEmpty) ...[
-                  const SizedBox(width: 8 * _ds),
-                  Text(
-                    badge,
-                    style: TvTheme.cardMeta.copyWith(color: TvTheme.brandPink),
-                  ),
-                ],
-              ],
-            ),
-            if (episode.longTitle?.isNotEmpty == true)
-              Text(
-                episode.longTitle!,
-                style: TvTheme.cardMeta,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-          ],
-        ),
       ),
     );
   }
