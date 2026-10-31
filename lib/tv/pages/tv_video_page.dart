@@ -45,7 +45,7 @@ import 'package:get/get.dart';
 /// `PlPlayerController.showControls` is never raised (its bars live offscreen
 /// behind a SlideTransition); this page draws its own overlay instead:
 /// * a small always-visible back/title pill (top-left), and
-/// * a bottom control bar (title, play state, buffered progress bar,
+/// * a bottom control bar (title, play state, progress bar,
 ///   position/duration) that auto-hides while playing.
 ///
 /// D-pad, handled by the page's root [Focus] node (never by the mobile
@@ -1338,7 +1338,7 @@ class _TvVideoPageState extends State<TvVideoPage> {
     );
   }
 
-  /// Bottom control bar: play state + title, buffered progress, times, and a
+  /// Bottom control bar: play state + title, progress, times, and a
   /// key hint. Slides/fades away after [_autoHideDelay] of no input.
   Widget _buildControlBar() {
     return Positioned(
@@ -1426,15 +1426,11 @@ class _TvVideoPageState extends State<TvVideoPage> {
             Obx(() {
               final int duration = playerCtr.duration.value;
               final int position = playerCtr.position.value;
-              final int buffered = playerCtr.buffered.value;
               final bool scrubbing = _scrubbing.value;
               final int targetMs = _scrubTargetMs.value;
               final int durMs = playerCtr.durationInMilliseconds;
               final double playedFactor = duration > 0
                   ? (position / duration).clamp(0.0, 1.0)
-                  : 0.0;
-              final double bufferedFactor = duration > 0
-                  ? (buffered / duration).clamp(0.0, 1.0)
                   : 0.0;
               final double targetFrac =
                   durMs > 0 ? (targetMs / durMs).clamp(0.0, 1.0) : 0.0;
@@ -1459,14 +1455,9 @@ class _TvVideoPageState extends State<TvVideoPage> {
                               child: Stack(
                                 fit: StackFit.expand,
                                 children: [
+                                  // No buffered fill: AVPlay reports only a
+                                  // load's progress, not what is cached.
                                   const ColoredBox(color: Color(0x38FFFFFF)),
-                                  FractionallySizedBox(
-                                    alignment: Alignment.centerLeft,
-                                    widthFactor: bufferedFactor,
-                                    child: const ColoredBox(
-                                      color: Color(0x59FFFFFF),
-                                    ),
-                                  ),
                                   FractionallySizedBox(
                                     alignment: Alignment.centerLeft,
                                     widthFactor: playedFactor,

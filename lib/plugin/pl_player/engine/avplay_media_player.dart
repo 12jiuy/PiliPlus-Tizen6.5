@@ -53,6 +53,9 @@ class AvplayMediaPlayer implements AbstractMediaPlayer {
   /// Previous [VideoPlayerValue] snapshot, used to diff and emit only deltas.
   VideoPlayerValue? _prev;
 
+  /// [VideoPlayerValue.buffered] when the current load started; see [_bufferOf].
+  int? _staleBufferPct;
+
   // ---- Request headers, set via [setMediaHeader] before [open] ----
   String? _userAgent;
   String? _referer;
@@ -127,10 +130,17 @@ class AvplayMediaPlayer implements AbstractMediaPlayer {
   @override
   int get videoHeight => _initializedValue?.size.height.toInt() ?? 0;
 
-  /// AVPlay reports buffered progress as a 0..100 percentage; project it onto
-  /// the known duration to obtain the buffered [Duration] the interface wants.
+  /// AVPlay's `buffered` is the progress (0..100) of the current load, not how
+  /// much of the stream is cached: it climbs during each load, and the native
+  /// side never reports 100 or resets it, so it keeps the last load's value.
+  /// It is projected onto the duration only because the interface wants a
+  /// [Duration]; TV code reads it back as a percentage. Until the current load
+  /// reports, the previous load's value reads as zero.
   Duration _bufferOf(VideoPlayerValue? v) {
     if (v == null || !v.isInitialized) {
+      return Duration.zero;
+    }
+    if (v.isBuffering && v.buffered == _staleBufferPct) {
       return Duration.zero;
     }
     final int totalMs = v.duration.end.inMilliseconds;
@@ -188,11 +198,13 @@ class AvplayMediaPlayer implements AbstractMediaPlayer {
     if (p == null || v.duration.end != p.duration.end) {
       _emit(_durationSC, v.duration.end);
     }
+    final Duration prevBuf = _bufferOf(p);
     if (p == null || v.isBuffering != p.isBuffering) {
+      if (v.isBuffering) _staleBufferPct = v.buffered;
       _emit(_bufferingSC, v.isBuffering);
     }
     final Duration buf = _bufferOf(v);
-    if (p == null || buf != _bufferOf(p)) {
+    if (p == null || buf != prevBuf) {
       _emit(_bufferSC, buf);
     }
     if (v.hasError && v.errorDescription != p?.errorDescription) {

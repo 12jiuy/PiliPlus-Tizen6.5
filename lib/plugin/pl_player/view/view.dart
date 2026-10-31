@@ -1923,7 +1923,9 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
                       if (plPlayerController.isBuffering.value)
                         Obx(() {
                           final buffered = plPlayerController.buffered.value;
-                          if (buffered == 0) {
+                          final duration = plPlayerController.duration.value;
+                          if (buffered == 0 ||
+                              (PlatformUtils.isTizen && duration <= 0)) {
                             return const Text(
                               '加载中...',
                               style: TextStyle(
@@ -1933,7 +1935,11 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
                             );
                           }
                           return Text(
-                            DurationUtils.formatDuration(buffered),
+                            // AVPlay's buffered is the current load's progress
+                            // (see AvplayMediaPlayer._bufferOf), not a length.
+                            PlatformUtils.isTizen
+                                ? '加载中 ${(buffered * 100 / duration).round().clamp(0, 100)}%'
+                                : DurationUtils.formatDuration(buffered),
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 12,
