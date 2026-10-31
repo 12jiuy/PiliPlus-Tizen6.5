@@ -585,7 +585,7 @@ class _TvPgcEpisodeStripState extends State<_TvPgcEpisodeStrip> {
               final index = start + i;
               return TvPgcEpisodeTile(
                 episode: episodes[index],
-                isLast: index == last,
+                highlighted: index == last,
                 focusNode: nodes[i],
                 onKeyEvent: (node, event) => _onKey(nodes, i, event),
                 onSelect: () => widget.onPlay(info, index),

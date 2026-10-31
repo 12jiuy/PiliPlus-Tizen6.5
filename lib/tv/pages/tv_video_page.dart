@@ -11,11 +11,15 @@ import 'package:PiliPlus/pages/video/introduction/local/controller.dart';
 import 'package:PiliPlus/pages/video/introduction/pgc/controller.dart';
 import 'package:PiliPlus/pages/video/introduction/ugc/controller.dart';
 import 'package:PiliPlus/pages/video/related/controller.dart';
+import 'package:PiliPlus/models_new/pgc/pgc_info_model/episode.dart'
+    as pgc;
 import 'package:PiliPlus/models_new/video/video_detail/episode.dart';
 import 'package:PiliPlus/plugin/pl_player/models/play_repeat.dart';
 import 'package:PiliPlus/tv/utils/tv_open.dart';
 import 'package:PiliPlus/tv/widgets/tv_comments_panel.dart';
 import 'package:PiliPlus/tv/widgets/tv_end_card.dart';
+import 'package:PiliPlus/tv/widgets/tv_episode_bar.dart';
+import 'package:PiliPlus/tv/widgets/tv_pgc_episode_tile.dart';
 import 'package:PiliPlus/tv/widgets/tv_up_next_card.dart';
 import 'package:PiliPlus/pages/video/reply/controller.dart';
 import 'package:PiliPlus/pages/video/widgets/header_control.dart';
@@ -26,6 +30,7 @@ import 'package:PiliPlus/services/service_locator.dart';
 import 'package:PiliPlus/tv/tv_theme.dart';
 import 'package:PiliPlus/tv/widgets/tv_player_options.dart';
 import 'package:PiliPlus/utils/duration_utils.dart';
+import 'package:PiliPlus/utils/page_utils.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
 import 'package:PiliPlus/utils/theme_utils.dart';
@@ -86,6 +91,7 @@ class _TvVideoPageState extends State<TvVideoPage> {
 
   final RxBool _controlsVisible = false.obs;
   final RxBool _optionsVisible = false.obs;
+  final RxBool _episodesVisible = false.obs;
   final RxBool _commentsVisible = false.obs;
 
   /// The "接下来" (up-next) auto-play card shown on completion, or null.
@@ -249,6 +255,7 @@ class _TvVideoPageState extends State<TvVideoPage> {
 
   @override
   void dispose() {
+    _disposed.complete();
     _hideTimer?.cancel();
     _lagPollTimer?.cancel();
     _scrubCommitTimer?.cancel();
@@ -429,6 +436,7 @@ class _TvVideoPageState extends State<TvVideoPage> {
       _showControls();
       return;
     }
+    _controlsBeforeOverlay = _controlsVisible.value;
     _hideControls();
     _optionsVisible.value = true;
   }
@@ -438,6 +446,75 @@ class _TvVideoPageState extends State<TvVideoPage> {
     _optionsVisible.value = false;
     // Hand the D-pad back to the page.
     _focusNode.requestFocus();
+    _restoreControls();
+  }
+
+  /// Whether the control bar was up when the options panel / 选集 bar opened
+  /// (both hide it).
+  bool _controlsBeforeOverlay = false;
+
+  /// After closing an overlay, bring the control bar back if it was up before
+  /// or playback is paused (a paused video always shows it).
+  void _restoreControls() {
+    if (_controlsBeforeOverlay ||
+        (_hasPlayer && !playerCtr.playerStatus.isPlaying)) {
+      _showControls();
+    }
+  }
+
+  /// Episodes for the Down 选集 bar: the 番剧 season's episodes, or a UGC
+  /// video's 分P (only when there is more than one).
+  List<BaseEpisodeItem> get _episodeList {
+    final ic = introController;
+    if (ic is PgcIntroController) {
+      return ic.pgcItem.episodes ?? const <BaseEpisodeItem>[];
+    }
+    final pages = ic.videoDetail.value.pages;
+    return (pages != null && pages.length > 1)
+        ? pages
+        : const <BaseEpisodeItem>[];
+  }
+
+  /// Down: open the 选集 bar when there is something to pick from, else just
+  /// peek the controls.
+  void _openEpisodes() {
+    if (plPlayerController == null || _episodeList.length < 2) {
+      _showControls();
+      return;
+    }
+    _controlsBeforeOverlay = _controlsVisible.value;
+    _hideControls();
+    _episodesVisible.value = true;
+  }
+
+  void _closeEpisodes() {
+    if (!_episodesVisible.value) return;
+    _episodesVisible.value = false;
+    _focusNode.requestFocus();
+    _restoreControls();
+  }
+
+  /// Completes when this page is disposed (its player torn down).
+  final Completer<void> _disposed = Completer<void>();
+
+  /// Play [ep] by closing this page and opening a fresh player page for it.
+  /// Switching in place (`onChangeEpisode`) leaves the new AVPlay player with
+  /// audio but no picture (its video plane never re-attaches), whereas opening
+  /// a page is the proven path; waiting for this page's disposal keeps the two
+  /// players from overlapping.
+  Future<void> _playEpisode(BaseEpisodeItem ep) async {
+    _closeEpisodes();
+    final cid = ep.cid;
+    if (cid == null || cid == introController.cid.value) return;
+    final ic = introController;
+    final bvid = ep.bvid ?? videoDetailController.bvid;
+    Get.back();
+    await _disposed.future;
+    if (ic is PgcIntroController && ep is pgc.EpisodeItem) {
+      tvPlayPgcEpisode(ic.pgcItem, ep);
+    } else {
+      PageUtils.toVideoPage(bvid: bvid, cid: cid, cover: ep.cover);
+    }
   }
 
   /// OK: toggle play/pause; if autoplay is off and no session exists yet,
@@ -779,6 +856,17 @@ class _TvVideoPageState extends State<TvVideoPage> {
       return KeyEventResult.ignored;
     }
 
+    if (_episodesVisible.value) {
+      // The bar's tiles handle arrows / OK / Back; backstop Back here.
+      if (key == LogicalKeyboardKey.goBack ||
+          key == LogicalKeyboardKey.browserBack ||
+          key == LogicalKeyboardKey.escape) {
+        if (isDown) _closeEpisodes();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+
     if (_optionsVisible.value) {
       // The options panel's own Focus handles navigation before events reach
       // this node; backstop Back here (e.g. for the frame before the panel
@@ -861,9 +949,10 @@ class _TvVideoPageState extends State<TvVideoPage> {
       return KeyEventResult.handled;
     }
 
+    // Down: the 选集 bar (or the controls when there are no episodes).
     if (key == LogicalKeyboardKey.arrowDown) {
       if (isDown) {
-        _showControls();
+        _openEpisodes();
       }
       return KeyEventResult.handled;
     }
@@ -924,6 +1013,17 @@ class _TvVideoPageState extends State<TvVideoPage> {
               ),
               _buildTopBar(),
               _buildControlBar(),
+              // 选集 bar, opened with Down.
+              Obx(
+                () => _episodesVisible.value
+                    ? TvEpisodeBar(
+                        episodes: _episodeList,
+                        currentCid: introController.cid.value,
+                        onSelect: _playEpisode,
+                        onClose: _closeEpisodes,
+                      )
+                    : const SizedBox.shrink(),
+              ),
               // In-player options panel, opened with Up.
               Obx(
                 () => _optionsVisible.value
@@ -1364,7 +1464,9 @@ class _TvVideoPageState extends State<TvVideoPage> {
                       Text(
                         scrubbing
                             ? 'OK 跳转 · ◀ ▶ 调整 · 返回 取消'
-                            : '▲ 选项 · ◀ ▶ 快退/快进 · OK 播放/暂停 · 返回 退出',
+                            : '▲ 选项 · '
+                                  '${_episodeList.length > 1 ? '▼ 选集 · ' : ''}'
+                                  '◀ ▶ 快退/快进 · OK 播放/暂停 · 返回 退出',
                         style: TvTheme.cardMeta,
                       ),
                       const Spacer(),

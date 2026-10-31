@@ -38,15 +38,16 @@ Future<void> tvPlayPgcEpisode(PgcInfoModel info, EpisodeItem episode) async {
 }
 
 /// A focusable episode tile (`第3话` + badge over the episode's long title);
-/// the last-watched one gets a [TvTheme.brandPink] outline and label. Also
-/// used, with [label] and no [episode], for the 更多 tile.
+/// a [highlighted] one (last watched / now playing) gets a
+/// [TvTheme.brandPink] outline and label. With [label] and no [episode] it is
+/// a plain one-line tile (the 更多 tile, UGC 分P).
 class TvPgcEpisodeTile extends StatelessWidget {
   const TvPgcEpisodeTile({
     super.key,
     this.episode,
     this.label,
     required this.onSelect,
-    this.isLast = false,
+    this.highlighted = false,
     this.autofocus = false,
     this.focusNode,
     this.onKeyEvent,
@@ -62,7 +63,7 @@ class TvPgcEpisodeTile extends StatelessWidget {
   final EpisodeItem? episode;
   final String? label;
   final VoidCallback onSelect;
-  final bool isLast;
+  final bool highlighted;
   final bool autofocus;
   final FocusNode? focusNode;
   final FocusOnKeyEventCallback? onKeyEvent;
@@ -91,7 +92,7 @@ class TvPgcEpisodeTile extends StatelessWidget {
         decoration: BoxDecoration(
           color: TvTheme.surface,
           borderRadius: radius,
-          border: isLast
+          border: highlighted
               ? Border.all(
                   color: TvTheme.brandPink,
                   width: 2 * TvTheme.designScale,
@@ -99,7 +100,14 @@ class TvPgcEpisodeTile extends StatelessWidget {
               : null,
         ),
         child: episode == null
-            ? Text(label!, style: TvTheme.buttonLabel)
+            ? Text(
+                label!,
+                style: TvTheme.buttonLabel.copyWith(
+                  color: highlighted ? TvTheme.brandPink : null,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              )
             : Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -110,7 +118,7 @@ class TvPgcEpisodeTile extends StatelessWidget {
                         child: Text(
                           tvPgcEpLabel(episode),
                           style: TvTheme.buttonLabel.copyWith(
-                            color: isLast ? TvTheme.brandPink : null,
+                            color: highlighted ? TvTheme.brandPink : null,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,

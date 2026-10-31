@@ -130,7 +130,7 @@ class _TvPgcDetailPageState extends State<TvPgcDetailPage> {
                 for (var i = start; i < end; i++)
                   TvPgcEpisodeTile(
                     episode: episodes[i],
-                    isLast: i == last,
+                    highlighted: i == last,
                     onSelect: () => _play(info, episodes[i]),
                   ),
               ],
