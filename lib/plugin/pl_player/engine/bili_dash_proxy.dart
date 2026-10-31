@@ -318,7 +318,9 @@ class BiliDashProxy implements DashProxy {
       await _respondStatus(request, HttpStatus.notFound);
       return;
     }
-    await _proxy(request, target, entry);
+    final DashStreamMeta? meta =
+        file == 'v.m4s' ? entry.videoMeta : entry.audioMeta;
+    await _proxy(request, target, entry, alternates: meta?.alternateUrls);
   }
 
   /// `GET /live-prog/<token>.mp4` — concatenate the live fMP4 fragments into ONE
@@ -495,34 +497,64 @@ class BiliDashProxy implements DashProxy {
   // Upstream reverse-proxy
   // ---------------------------------------------------------------------------
 
+  /// How long an upstream may take to answer (status + headers) before the
+  /// relay moves on to the next alternate url. Bilibili's CDN answers in
+  /// ~0.2s; a segment body may then legitimately take seconds.
+  static const Duration _answerTimeout = Duration(seconds: 3);
+
   /// Issue [targetUri] upstream with Referer/User-Agent injected and the
   /// client's `Range` copied through, then stream status + headers + bytes back.
+  ///
+  /// When [alternates] are given (the stream's other CDN urls), a refusal
+  /// (403 / 5xx) or no answer within [_answerTimeout] retries THIS request on
+  /// the next one; later requests still start from [targetUri]. A CDN node
+  /// can briefly refuse the re-requests that follow a seek, which otherwise
+  /// failed playback outright.
   Future<void> _proxy(
     HttpRequest request,
     String targetUri,
-    _ProxyEntry entry,
-  ) async {
+    _ProxyEntry entry, {
+    List<String>? alternates,
+  }) async {
     final HttpResponse out = request.response;
     HttpClientResponse? upstream;
+    final String? range = request.headers.value(HttpHeaders.rangeHeader);
+    final List<String> candidates = [
+      targetUri,
+      ...?alternates?.where((u) => u != targetUri),
+    ];
     try {
-      final Uri uri = Uri.parse(targetUri);
-      final HttpClientRequest up = await _client.getUrl(uri);
-      up.followRedirects = true;
-      up.maxRedirects = 8;
-
-      // Inject the headers AVPlay drops.
-      up.headers
-        ..set(HttpHeaders.refererHeader, entry.referer)
-        ..set(HttpHeaders.userAgentHeader, entry.userAgent)
-        ..set(HttpHeaders.acceptHeader, '*/*');
-
-      // Forward Range verbatim so the player can seek / probe.
-      final String? range = request.headers.value(HttpHeaders.rangeHeader);
-      if (range != null && range.isNotEmpty) {
-        up.headers.set(HttpHeaders.rangeHeader, range);
+      for (int i = 0; i < candidates.length; i++) {
+        final bool last = i == candidates.length - 1;
+        final Uri uri = Uri.parse(candidates[i]);
+        final Future<HttpClientResponse> opening = _open(uri, entry, range);
+        try {
+          upstream = await opening.timeout(_answerTimeout);
+        } on TimeoutException {
+          // Release the connection if the abandoned node answers later.
+          unawaited(
+            opening.then((r) => r.drain<void>()).catchError((_) {}),
+          );
+          if (last) rethrow;
+          debugPrint('BiliDashProxy: ${uri.host} no answer for $range, '
+              'trying alternate ${i + 1}');
+          continue;
+        }
+        final int status = upstream.statusCode;
+        if (!last &&
+            (status == HttpStatus.forbidden ||
+                status >= HttpStatus.internalServerError)) {
+          debugPrint('BiliDashProxy: ${uri.host} answered $status for $range, '
+              'trying alternate ${i + 1}');
+          await upstream.drain<void>().catchError((_) {});
+          continue;
+        }
+        if (i > 0) {
+          debugPrint('BiliDashProxy: ${uri.host} served $range ($status)');
+        }
+        break;
       }
-
-      upstream = await up.close();
+      if (upstream == null) throw StateError('no upstream');
 
       // Present the player with clean, GStreamer/souphttpsrc-friendly responses:
       //  * an open-ended (`bytes=0-`) or range-less request -> 200 OK with a real
@@ -558,6 +590,26 @@ class BiliDashProxy implements DashProxy {
       } catch (_) {}
       await _safeClose(out, HttpStatus.badGateway);
     }
+  }
+
+  /// Open [uri] upstream with the headers AVPlay drops, forwarding [range]
+  /// verbatim so the player can seek / probe.
+  Future<HttpClientResponse> _open(
+    Uri uri,
+    _ProxyEntry entry,
+    String? range,
+  ) async {
+    final HttpClientRequest up = await _client.getUrl(uri);
+    up.followRedirects = true;
+    up.maxRedirects = 8;
+    up.headers
+      ..set(HttpHeaders.refererHeader, entry.referer)
+      ..set(HttpHeaders.userAgentHeader, entry.userAgent)
+      ..set(HttpHeaders.acceptHeader, '*/*');
+    if (range != null && range.isNotEmpty) {
+      up.headers.set(HttpHeaders.rangeHeader, range);
+    }
+    return up.close();
   }
 
   // ---------------------------------------------------------------------------

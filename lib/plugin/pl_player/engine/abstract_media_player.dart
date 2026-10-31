@@ -82,6 +82,7 @@ class DashStreamMeta {
     this.channels,
     this.initializationRange,
     this.indexRange,
+    this.alternateUrls = const [],
   });
 
   /// DASH `codecs`, e.g. `avc1.640028`, `hev1.1.6.L153.90`, `av01.0.08M.08`,
@@ -119,6 +120,11 @@ class DashStreamMeta {
   /// Bilibili-supplied index (`sidx`) byte range, inclusive `"first-last"`
   /// (e.g. `"823-1381"`). Preferred over byte-probing when present.
   final String? indexRange;
+
+  /// Every url Bilibili offers for this stream (`base_url` + `backup_url`,
+  /// on different CDN nodes). The proxy's segment relay falls back to them
+  /// when the played url is refused or does not answer.
+  final List<String> alternateUrls;
 }
 
 /// An external or embedded subtitle track.

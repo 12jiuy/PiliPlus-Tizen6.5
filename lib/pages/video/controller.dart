@@ -767,6 +767,7 @@ class VideoDetailController extends GetxController
         segmentBase,
         const ['indexRange', 'index_range', 'Index', 'indexrange'],
       ),
+      alternateUrls: item.playUrls.toList(),
     );
   }
 
