@@ -48,6 +48,14 @@ import 'package:PiliPlus/plugin/pl_player/engine/abstract_media_player.dart';
 class BiliDashProxy {
   BiliDashProxy();
 
+  /// Whether the bundled `libdash.so` carries the Bilibili Referer binary patch
+  /// (`tool/tizen-libdash-patch`). Only then may the manifest's `BaseURL`s point
+  /// at the CDN directly; a stock libdash sends no Referer and every segment
+  /// request is refused with `403`, so by default the `BaseURL`s point at the
+  /// loopback `/seg/` relay, which injects the Referer itself.
+  static const bool _libdashRefererPatched =
+      bool.fromEnvironment('TIZEN_LIBDASH_REFERER_PATCHED');
+
   /// Default browser-ish User-Agent used when a caller does not supply one.
   /// Bilibili's CDN rejects obviously-bot agents, so keep this plausible.
   static const String _defaultUserAgent =
@@ -204,6 +212,8 @@ class BiliDashProxy {
       //   GET /mpd/<token>.mpd       — native zero-byte DASH manifest (dual-stream)
       //   GET /live-prog/<token>.mp4 — live fMP4 fragments welded into ONE stream
       //   GET /direct/<token>        — single-url byte-pump (durl-only / audio)
+      //   GET /seg/<token>/{v,a}.m4s — Referer-injecting relay for the manifest's
+      //                                BaseURLs (stock libdash only)
       if (segments.length == 2 && segments[0] == 'mpd') {
         final String token = _stripSuffix(segments[1], '.mpd');
         await _serveMpd(request, token);
@@ -212,6 +222,8 @@ class BiliDashProxy {
         await _serveLiveProgressive(request, token);
       } else if (segments.length == 2 && segments[0] == 'direct') {
         await _serveDirect(request, segments[1]);
+      } else if (segments.length == 3 && segments[0] == 'seg') {
+        await _serveSegment(request, segments[1], segments[2]);
       } else {
         await _respondStatus(request, HttpStatus.notFound);
       }
@@ -262,6 +274,28 @@ class BiliDashProxy {
       return;
     }
     await _proxy(request, entry.videoUri, entry);
+  }
+
+  /// `GET /seg/<token>/{v,a}.m4s` — relay a DASH stream's byte-range requests
+  /// to the CDN with the Referer injected (see [_libdashRefererPatched]).
+  Future<void> _serveSegment(
+    HttpRequest request,
+    String token,
+    String file,
+  ) async {
+    final _ProxyEntry? entry = _registry[token];
+    final String? target = entry == null
+        ? null
+        : file == 'v.m4s'
+            ? entry.videoUri
+            : file == 'a.m4s'
+                ? entry.audioUri
+                : null;
+    if (entry == null || target == null) {
+      await _respondStatus(request, HttpStatus.notFound);
+      return;
+    }
+    await _proxy(request, target, entry);
   }
 
   /// `GET /live-prog/<token>.mp4` — concatenate the live fMP4 fragments into ONE
@@ -685,8 +719,11 @@ class BiliDashProxy {
   /// ranges into the fragmented-MP4 (see [_writeSegmentList]).
   String _buildMpd(String token) {
     final _ProxyEntry entry = _registry[token]!;
-    final String videoUrl = entry.videoUri;
-    final String audioUrl = entry.audioUri ?? '';
+    final String videoUrl =
+        _libdashRefererPatched ? entry.videoUri : '$_base/seg/$token/v.m4s';
+    final String audioUrl = _libdashRefererPatched
+        ? entry.audioUri ?? ''
+        : '$_base/seg/$token/a.m4s';
     final bool hasAudio = entry.audioUri != null;
 
     // A `static` (on-demand) MPD needs an explicit presentation duration for the
